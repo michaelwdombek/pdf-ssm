@@ -16,7 +16,7 @@ jobs:
       - uses: actions/checkout@v4
 
       # QEMU for multi-platform builds (arm64 emulation)
-      - uses: docker/setup-qemu-action@v3
+      - uses: docker/setup-qemu-action@v4
 
       - uses: docker/setup-buildx-action@v3
 
