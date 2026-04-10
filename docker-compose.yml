@@ -1,0 +1,15 @@
+services:
+  signdesk:
+    build: .
+    image: signdesk:latest
+    container_name: signdesk
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8420:8080"
+    read_only: true
+    tmpfs:
+      - /tmp
+      - /var/cache/nginx
+      - /var/run
+    security_opt:
+      - no-new-privileges:true
