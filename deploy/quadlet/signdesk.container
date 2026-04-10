@@ -1,0 +1,20 @@
+[Unit]
+Description=SignDesk Frontend
+After=signdesk-backend.service
+
+[Container]
+ContainerName=signdesk
+Image=localhost/signdesk:latest
+Network=signdesk.network
+PublishPort=127.0.0.1:8420:8080
+ReadOnly=true
+Tmpfs=/tmp
+Tmpfs=/var/cache/nginx
+Tmpfs=/var/run
+SecurityLabelDisable=true
+
+[Service]
+Restart=always
+
+[Install]
+WantedBy=default.target

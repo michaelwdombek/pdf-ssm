@@ -1,0 +1,19 @@
+[Unit]
+Description=SignDesk Backend API
+After=network-online.target
+
+[Container]
+ContainerName=signdesk-backend
+Image=localhost/signdesk-backend:latest
+Volume=signdesk-data.volume:/app/data:Z
+EnvironmentFile=%E/signdesk/backend.env
+Network=signdesk.network
+ReadOnly=true
+Tmpfs=/tmp
+SecurityLabelDisable=true
+
+[Service]
+Restart=always
+
+[Install]
+WantedBy=default.target

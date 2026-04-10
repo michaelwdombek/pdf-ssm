@@ -7,3 +7,8 @@ dist/
 *.log
 npm-debug.log*
 .vite/
+
+# Server
+server/node_modules/
+server/dist/
+server/data/

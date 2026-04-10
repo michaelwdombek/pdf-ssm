@@ -2,14 +2,31 @@ import type { PDFDocumentProxy } from 'pdfjs-dist'
 
 export type ToolMode = 'select' | 'sign' | 'stamp'
 
+export type AssetSource = 'local' | 'server'
+
 export interface LoadedAsset {
   id: string
   name: string
   type: 'signature' | 'stamp'
+  source: AssetSource
+  serverSlot?: number
   dataUrl: string
   imageBytes: Uint8Array
   width: number
   height: number
+}
+
+export interface UserInfo {
+  userId: string
+  displayName: string
+  email: string
+}
+
+export interface ServerDocumentMeta {
+  fileName: string
+  pageCount: number
+  savedAt: string
+  sizeBytes: number
 }
 
 export interface Annotation {
@@ -85,6 +102,19 @@ export type AppAction =
     }
   | { type: 'DELETE_ANNOTATION'; payload: { id: string; page: number } }
   | { type: 'SELECT_ANNOTATION'; payload: string | null }
+  | { type: 'SET_SERVER_ASSETS'; payload: { signatures: LoadedAsset[]; stamps: LoadedAsset[] } }
+  | { type: 'CLEAR_SERVER_ASSETS' }
+  | {
+      type: 'LOAD_SERVER_DOCUMENT'
+      payload: {
+        file: File
+        pdfDocument: PDFDocumentProxy
+        pdfBytes: Uint8Array
+        pageCount: number
+        fileName: string
+        annotations: Record<number, Annotation[]>
+      }
+    }
   | { type: 'UNDO' }
   | { type: 'REDO' }
 

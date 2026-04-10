@@ -172,6 +172,52 @@ function appReducer(state: AppState, action: AppAction): AppState {
     case 'SELECT_ANNOTATION':
       return { ...state, selectedAnnotationId: action.payload }
 
+    case 'SET_SERVER_ASSETS': {
+      const { signatures: serverSigs, stamps: serverStamps } = action.payload
+      const localSigs = state.assets.signatures.filter(a => a.source === 'local')
+      const localStamps = state.assets.stamps.filter(a => a.source === 'local')
+      return {
+        ...state,
+        assets: {
+          ...state.assets,
+          signatures: [...serverSigs, ...localSigs],
+          stamps: [...serverStamps, ...localStamps],
+        },
+      }
+    }
+
+    case 'CLEAR_SERVER_ASSETS': {
+      const localSigs = state.assets.signatures.filter(a => a.source === 'local')
+      const localStamps = state.assets.stamps.filter(a => a.source === 'local')
+      const allLocal = [...localSigs, ...localStamps]
+      const activeStillExists = allLocal.some(a => a.id === state.assets.activeAssetId)
+      return {
+        ...state,
+        assets: {
+          signatures: localSigs,
+          stamps: localStamps,
+          activeAssetId: activeStillExists ? state.assets.activeAssetId : null,
+        },
+      }
+    }
+
+    case 'LOAD_SERVER_DOCUMENT':
+      return {
+        ...state,
+        document: {
+          file: action.payload.file,
+          pdfDocument: action.payload.pdfDocument,
+          pdfBytes: action.payload.pdfBytes,
+          pageCount: action.payload.pageCount,
+          currentPage: 1,
+          zoom: 1.0,
+          fileName: action.payload.fileName,
+        },
+        annotations: action.payload.annotations,
+        selectedAnnotationId: null,
+        history: { past: [], future: [] },
+      }
+
     case 'UNDO': {
       if (state.history.past.length === 0) return state
       const past = [...state.history.past]

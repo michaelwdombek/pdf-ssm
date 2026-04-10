@@ -1,11 +1,14 @@
 import { useRef, useState } from 'react'
 import { useAppContext } from '../context/AppContext'
+import { useAuth } from '../context/AuthContext'
+import { useServerAssets } from '../hooks/useServerAssets'
 import type { LoadedAsset } from '../types'
 
 const ACCEPTED_IMAGE_TYPES = '.png,.jpg,.jpeg,.webp,.svg'
 
+const SERVER_LIMITS: Record<string, number> = { signature: 2, stamp: 1 }
+
 async function fileToAsset(file: File, type: 'signature' | 'stamp'): Promise<LoadedAsset> {
-  // Get dataUrl for thumbnail display
   const dataUrl = await new Promise<string>((resolve, reject) => {
     const reader = new FileReader()
     reader.onload = () => resolve(reader.result as string)
@@ -13,7 +16,6 @@ async function fileToAsset(file: File, type: 'signature' | 'stamp'): Promise<Loa
     reader.readAsDataURL(file)
   })
 
-  // Get natural image dimensions
   const { width, height } = await new Promise<{ width: number; height: number }>((resolve, reject) => {
     const img = new Image()
     img.onload = () => resolve({ width: img.naturalWidth, height: img.naturalHeight })
@@ -21,7 +23,6 @@ async function fileToAsset(file: File, type: 'signature' | 'stamp'): Promise<Loa
     img.src = dataUrl
   })
 
-  // Re-encode to PNG via canvas for consistent pdf-lib embedding
   const pngBytes = await new Promise<Uint8Array>((resolve, reject) => {
     const img = new Image()
     img.onload = () => {
@@ -43,6 +44,7 @@ async function fileToAsset(file: File, type: 'signature' | 'stamp'): Promise<Loa
     id: crypto.randomUUID(),
     name: file.name,
     type,
+    source: 'local',
     dataUrl,
     imageBytes: pngBytes,
     width,
@@ -50,11 +52,13 @@ async function fileToAsset(file: File, type: 'signature' | 'stamp'): Promise<Loa
   }
 }
 
-function AssetCard({ asset, isActive, onClick, onRemove }: {
+function AssetCard({ asset, isActive, onClick, onRemove, showSourceBadge, onSaveToProfile }: {
   asset: LoadedAsset
   isActive: boolean
   onClick: () => void
   onRemove: () => void
+  showSourceBadge?: boolean
+  onSaveToProfile?: () => void
 }) {
   return (
     <div
@@ -67,6 +71,16 @@ function AssetCard({ asset, isActive, onClick, onRemove }: {
       onClick={onClick}
       title={asset.name}
     >
+      {/* Source badge */}
+      {showSourceBadge && asset.source === 'server' && (
+        <div
+          className="absolute top-1 left-1 w-4 h-4 rounded-full flex items-center justify-center text-[9px] z-10"
+          style={{ backgroundColor: 'var(--color-accent)', color: 'white' }}
+          title="Saved to profile"
+        >
+          P
+        </div>
+      )}
       <div className="flex items-center justify-center h-16 p-2">
         <img
           src={asset.dataUrl}
@@ -81,27 +95,34 @@ function AssetCard({ asset, isActive, onClick, onRemove }: {
       >
         {asset.name}
       </div>
-      {/* Remove button */}
-      <button
-        className="absolute top-1 right-1 w-5 h-5 rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity text-xs leading-none"
-        style={{ backgroundColor: 'var(--color-danger)', color: 'white' }}
-        onClick={e => { e.stopPropagation(); onRemove() }}
-        title="Remove"
-      >
-        ×
-      </button>
+      {/* Action buttons */}
+      <div className="absolute top-1 right-1 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+        {onSaveToProfile && (
+          <button
+            className="w-5 h-5 rounded-full flex items-center justify-center text-xs leading-none"
+            style={{ backgroundColor: 'var(--color-accent)', color: 'white' }}
+            onClick={e => { e.stopPropagation(); onSaveToProfile() }}
+            title="Save to profile"
+          >
+            +
+          </button>
+        )}
+        <button
+          className="w-5 h-5 rounded-full flex items-center justify-center text-xs leading-none"
+          style={{ backgroundColor: 'var(--color-danger)', color: 'white' }}
+          onClick={e => { e.stopPropagation(); onRemove() }}
+          title={asset.source === 'server' ? 'Remove from profile' : 'Remove'}
+        >
+          x
+        </button>
+      </div>
     </div>
   )
 }
 
-function AssetSection({ title, assets, activeAssetId, type, onAdd, onSelect, onRemove }: {
-  title: string
-  assets: LoadedAsset[]
-  activeAssetId: string | null
+function AssetUploadSection({ type, onAdd }: {
   type: 'signature' | 'stamp'
   onAdd: (asset: LoadedAsset) => void
-  onSelect: (id: string) => void
-  onRemove: (id: string) => void
 }) {
   const inputRef = useRef<HTMLInputElement>(null)
   const [isDragOver, setIsDragOver] = useState(false)
@@ -155,66 +176,161 @@ function AssetSection({ title, assets, activeAssetId, type, onAdd, onSelect, onR
   const dropHandlers = { onDragEnter: handleDragEnter, onDragLeave: handleDragLeave, onDragOver: handleDragOver, onDrop: handleDrop }
 
   return (
+    <div className="mt-2">
+      <input
+        ref={inputRef}
+        type="file"
+        accept={ACCEPTED_IMAGE_TYPES}
+        className="hidden"
+        onChange={handleFileChange}
+      />
+      <div
+        {...dropHandlers}
+        className="text-xs text-center py-3 rounded border border-dashed transition-colors cursor-pointer"
+        style={{
+          color: isDragOver ? 'var(--color-accent)' : 'var(--color-text-faint)',
+          borderColor: isDragOver ? 'var(--color-accent)' : 'var(--color-border)',
+          backgroundColor: isDragOver ? 'var(--color-accent-muted)' : 'transparent',
+        }}
+        onClick={() => inputRef.current?.click()}
+      >
+        {isDragOver ? `Drop to add ${type}` : `Drop ${type} here or click to upload`}
+      </div>
+    </div>
+  )
+}
+
+function AssetGroup({ title, assets, activeAssetId, onSelect, onRemove, showSourceBadge, onSaveToProfile }: {
+  title: string
+  assets: LoadedAsset[]
+  activeAssetId: string | null
+  onSelect: (id: string) => void
+  onRemove: (id: string) => void
+  showSourceBadge?: boolean
+  onSaveToProfile?: (asset: LoadedAsset) => void
+}) {
+  if (assets.length === 0) return null
+
+  return (
+    <div className="mb-2">
+      <span
+        className="text-[10px] uppercase tracking-wider mb-1 block"
+        style={{ color: 'var(--color-text-faint)' }}
+      >
+        {title}
+      </span>
+      <div className="grid grid-cols-2 gap-2">
+        {assets.map(asset => (
+          <AssetCard
+            key={asset.id}
+            asset={asset}
+            isActive={asset.id === activeAssetId}
+            onClick={() => onSelect(asset.id)}
+            onRemove={() => onRemove(asset.id)}
+            showSourceBadge={showSourceBadge}
+            onSaveToProfile={onSaveToProfile ? () => onSaveToProfile(asset) : undefined}
+          />
+        ))}
+      </div>
+    </div>
+  )
+}
+
+function AssetSection({ title, type, serverAssets, localAssets, activeAssetId, isAuthenticated, onAddLocal, onSelect, onRemoveLocal, onRemoveServer, onSaveToProfile }: {
+  title: string
+  type: 'signature' | 'stamp'
+  serverAssets: LoadedAsset[]
+  localAssets: LoadedAsset[]
+  activeAssetId: string | null
+  isAuthenticated: boolean
+  onAddLocal: (asset: LoadedAsset) => void
+  onSelect: (id: string) => void
+  onRemoveLocal: (id: string) => void
+  onRemoveServer: (type: 'signature' | 'stamp', slot: number) => void
+  onSaveToProfile: (asset: LoadedAsset) => void
+}) {
+  const serverSlotsFull = serverAssets.length >= (SERVER_LIMITS[type] ?? 0)
+  const canSaveToProfile = isAuthenticated && !serverSlotsFull
+
+  return (
     <div className="mb-4">
       <div className="flex items-center justify-between mb-2">
         <span className="text-xs font-semibold uppercase tracking-wider" style={{ color: 'var(--color-text-muted)' }}>
           {title}
         </span>
-        <input
-          ref={inputRef}
-          type="file"
-          accept={ACCEPTED_IMAGE_TYPES}
-          className="hidden"
-          onChange={handleFileChange}
-        />
-        <button
-          className="btn-ghost text-xs py-0.5 px-2"
-          onClick={() => inputRef.current?.click()}
-          title={`Upload ${title.toLowerCase()}`}
-        >
-          + Upload
-        </button>
       </div>
-      {assets.length === 0 ? (
-        <div
-          {...dropHandlers}
-          className="text-xs text-center py-4 rounded border border-dashed transition-colors"
-          style={{
-            color: isDragOver ? 'var(--color-accent)' : 'var(--color-text-faint)',
-            borderColor: isDragOver ? 'var(--color-accent)' : 'var(--color-border)',
-            backgroundColor: isDragOver ? 'var(--color-accent-muted)' : 'transparent',
+
+      {/* Server (Profile) assets */}
+      {isAuthenticated && (
+        <AssetGroup
+          title="Profile"
+          assets={serverAssets}
+          activeAssetId={activeAssetId}
+          onSelect={onSelect}
+          onRemove={id => {
+            const asset = serverAssets.find(a => a.id === id)
+            if (asset?.serverSlot != null) onRemoveServer(asset.type, asset.serverSlot)
           }}
-        >
-          {isDragOver ? `Drop to add ${type}` : `Drop ${type} here or click Upload`}
-        </div>
-      ) : (
-        <div
-          {...dropHandlers}
-          className="grid grid-cols-2 gap-2 rounded transition-colors"
-          style={isDragOver ? {
-            outline: '2px dashed var(--color-accent)',
-            outlineOffset: '2px',
-            backgroundColor: 'var(--color-accent-muted)',
-          } : undefined}
-        >
-          {assets.map(asset => (
-            <AssetCard
-              key={asset.id}
-              asset={asset}
-              isActive={asset.id === activeAssetId}
-              onClick={() => onSelect(asset.id)}
-              onRemove={() => onRemove(asset.id)}
-            />
-          ))}
-        </div>
+          showSourceBadge
+        />
       )}
+
+      {/* Local (Session) assets */}
+      <AssetGroup
+        title={isAuthenticated ? 'Session' : ''}
+        assets={localAssets}
+        activeAssetId={activeAssetId}
+        onSelect={onSelect}
+        onRemove={onRemoveLocal}
+        onSaveToProfile={canSaveToProfile ? onSaveToProfile : undefined}
+      />
+
+      {/* Upload area */}
+      <AssetUploadSection type={type} onAdd={onAddLocal} />
     </div>
   )
 }
 
 export function Sidebar() {
   const { state, dispatch } = useAppContext()
+  const { auth } = useAuth()
+  const { saveAssetToServer, deleteServerAsset } = useServerAssets()
   const { signatures, stamps, activeAssetId } = state.assets
+
+  const serverSigs = signatures.filter(a => a.source === 'server')
+  const localSigs = signatures.filter(a => a.source === 'local')
+  const serverStamps = stamps.filter(a => a.source === 'server')
+  const localStamps = stamps.filter(a => a.source === 'local')
+
+  function findNextSlot(type: 'signature' | 'stamp'): number {
+    const serverAssets = type === 'signature' ? serverSigs : serverStamps
+    const usedSlots = new Set(serverAssets.map(a => a.serverSlot))
+    const max = SERVER_LIMITS[type] ?? 1
+    for (let i = 1; i <= max; i++) {
+      if (!usedSlots.has(i)) return i
+    }
+    return -1
+  }
+
+  async function handleSaveToProfile(asset: LoadedAsset) {
+    const slot = findNextSlot(asset.type)
+    if (slot === -1) return
+    try {
+      await saveAssetToServer(asset, slot)
+      // Remove the local copy after saving to server
+      dispatch({ type: 'REMOVE_ASSET', payload: asset.id })
+    } catch (err) {
+      console.error('Failed to save to profile:', err)
+    }
+  }
+
+  async function handleRemoveServer(type: 'signature' | 'stamp', slot: number) {
+    try {
+      await deleteServerAsset(type, slot)
+    } catch (err) {
+      console.error('Failed to remove from profile:', err)
+    }
+  }
 
   return (
     <aside
@@ -227,22 +343,30 @@ export function Sidebar() {
       <div className="p-3 flex-1">
         <AssetSection
           title="Signatures"
-          assets={signatures}
-          activeAssetId={activeAssetId}
           type="signature"
-          onAdd={asset => dispatch({ type: 'ADD_ASSET', payload: asset })}
+          serverAssets={serverSigs}
+          localAssets={localSigs}
+          activeAssetId={activeAssetId}
+          isAuthenticated={auth.isAuthenticated}
+          onAddLocal={asset => dispatch({ type: 'ADD_ASSET', payload: asset })}
           onSelect={id => dispatch({ type: 'SET_ACTIVE_ASSET', payload: id })}
-          onRemove={id => dispatch({ type: 'REMOVE_ASSET', payload: id })}
+          onRemoveLocal={id => dispatch({ type: 'REMOVE_ASSET', payload: id })}
+          onRemoveServer={handleRemoveServer}
+          onSaveToProfile={handleSaveToProfile}
         />
         <div className="my-3 border-t" style={{ borderColor: 'var(--color-border)' }} />
         <AssetSection
           title="Stamps"
-          assets={stamps}
-          activeAssetId={activeAssetId}
           type="stamp"
-          onAdd={asset => dispatch({ type: 'ADD_ASSET', payload: asset })}
+          serverAssets={serverStamps}
+          localAssets={localStamps}
+          activeAssetId={activeAssetId}
+          isAuthenticated={auth.isAuthenticated}
+          onAddLocal={asset => dispatch({ type: 'ADD_ASSET', payload: asset })}
           onSelect={id => dispatch({ type: 'SET_ACTIVE_ASSET', payload: id })}
-          onRemove={id => dispatch({ type: 'REMOVE_ASSET', payload: id })}
+          onRemoveLocal={id => dispatch({ type: 'REMOVE_ASSET', payload: id })}
+          onRemoveServer={handleRemoveServer}
+          onSaveToProfile={handleSaveToProfile}
         />
       </div>
 

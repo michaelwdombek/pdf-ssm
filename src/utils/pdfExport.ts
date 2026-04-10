@@ -2,12 +2,11 @@ import { PDFDocument } from 'pdf-lib'
 import { normalizedToPdfCoords } from './geometry'
 import type { Annotation, LoadedAsset } from '../types'
 
-export async function exportAnnotatedPdf(
+export async function generateAnnotatedPdfBytes(
   pdfBytes: Uint8Array,
   annotations: Record<number, Annotation[]>,
-  assets: LoadedAsset[],
-  fileName: string
-): Promise<void> {
+  assets: LoadedAsset[]
+): Promise<Uint8Array> {
   const pdfDoc = await PDFDocument.load(pdfBytes)
   const assetMap = new Map(assets.map(a => [a.id, a]))
 
@@ -46,7 +45,16 @@ export async function exportAnnotatedPdf(
     }
   }
 
-  const outputBytes = await pdfDoc.save()
+  return await pdfDoc.save()
+}
+
+export async function exportAnnotatedPdf(
+  pdfBytes: Uint8Array,
+  annotations: Record<number, Annotation[]>,
+  assets: LoadedAsset[],
+  fileName: string
+): Promise<void> {
+  const outputBytes = await generateAnnotatedPdfBytes(pdfBytes, annotations, assets)
   const blob = new Blob([outputBytes.buffer as ArrayBuffer], { type: 'application/pdf' })
   const url = URL.createObjectURL(blob)
   const a = document.createElement('a')
